@@ -18,10 +18,6 @@ implements his Equal Risk Contribution framework:
 > Qian is currently Chief Investment Officer of Multi Asset Investments at PanAgora."*
 > — Wikipedia / PanAgora
 
-PanAgora's job postings explicitly require Python + SQL fluency. This repo
-demonstrates exactly that split: **SQL handles everything expressible as a
-window function; Python handles only what SQL cannot** (iterative ERC optimisation).
-
 ---
 
 ## The SQL / Python Split
