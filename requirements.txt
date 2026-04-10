@@ -1,0 +1,7 @@
+duckdb>=0.10
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+yfinance>=0.2.36   # optional; --synthetic mode bypasses
+pytest>=7.4
