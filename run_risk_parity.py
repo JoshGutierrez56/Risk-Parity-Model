@@ -36,7 +36,16 @@ OUT_DIR  = Path("outputs")
 SQL_DIR  = Path("sql")
 
 
+def _configure_console() -> None:
+    """Use UTF-8 for report glyphs when supported by the host streams."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(args: argparse.Namespace) -> None:
+    _configure_console()
     sys.path.insert(0, "src")
     from riskparity.db        import DB
     from riskparity.loader    import download_and_load, UNIVERSE
@@ -118,6 +127,9 @@ def main(args: argparse.Namespace) -> None:
 
     # ── 7. Print performance summary (from SQL) ───────────────────────
     perf = db.query("SELECT * FROM performance_summary")
+    table_dir = OUT_DIR / "tables"
+    table_dir.mkdir(parents=True, exist_ok=True)
+    perf.to_csv(table_dir / "performance_summary.csv", index=False)
 
     if args.scorecard:
         if not perf.empty:
@@ -135,6 +147,7 @@ def main(args: argparse.Namespace) -> None:
     # Latest risk contribution
     latest_date = rebal_dates[-1]
     rc = optimizer.risk_contribution_table(latest_date, "risk_parity")
+    rc.to_csv(table_dir / "latest_risk_contributions.csv", index=False)
     if not rc.empty:
         print(f"┌─ Risk Contributions at {latest_date} ─────────────────────")
         print(rc.to_string(index=False))
