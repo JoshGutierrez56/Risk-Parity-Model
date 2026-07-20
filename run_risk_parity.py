@@ -36,10 +36,19 @@ OUT_DIR  = Path("outputs")
 SQL_DIR  = Path("sql")
 
 
+def _configure_console() -> None:
+    """Use UTF-8 for report glyphs when supported by the host streams."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(args: argparse.Namespace) -> None:
+    _configure_console()
     sys.path.insert(0, "src")
     from riskparity.db        import DB
-    from riskparity.loader    import download_and_load, UNIVERSE
+    from riskparity.loader    import download_and_load, download_wrds_and_load, UNIVERSE
     from riskparity.optimizer import RiskParityOptimizer
     from riskparity.report    import generate_report
 
@@ -57,6 +66,9 @@ def main(args: argparse.Namespace) -> None:
     # ── 2. Load price data ───────────────────────────────────────────
     tickers = list(UNIVERSE.keys())
 
+    if args.synthetic and args.wrds:
+        raise SystemExit("Choose only one of --synthetic or --wrds")
+
     if args.synthetic:
         from riskparity.loader import _synthetic_prices
         import pandas as pd
@@ -73,6 +85,11 @@ def main(args: argparse.Namespace) -> None:
             for t, v in UNIVERSE.items()
         ])
         db.load_df(assets, "assets")
+    elif args.wrds:
+        download_wrds_and_load(
+            db, tickers=tickers, start=args.start, end=args.end,
+            dataset=args.wrds_dataset,
+        )
     else:
         download_and_load(db, tickers=tickers, start=args.start, end=args.end)
 
@@ -118,6 +135,9 @@ def main(args: argparse.Namespace) -> None:
 
     # ── 7. Print performance summary (from SQL) ───────────────────────
     perf = db.query("SELECT * FROM performance_summary")
+    table_dir = OUT_DIR / "tables"
+    table_dir.mkdir(parents=True, exist_ok=True)
+    perf.to_csv(table_dir / "performance_summary.csv", index=False)
 
     if args.scorecard:
         if not perf.empty:
@@ -135,6 +155,7 @@ def main(args: argparse.Namespace) -> None:
     # Latest risk contribution
     latest_date = rebal_dates[-1]
     rc = optimizer.risk_contribution_table(latest_date, "risk_parity")
+    rc.to_csv(table_dir / "latest_risk_contributions.csv", index=False)
     if not rc.empty:
         print(f"┌─ Risk Contributions at {latest_date} ─────────────────────")
         print(rc.to_string(index=False))
@@ -158,6 +179,10 @@ if __name__ == "__main__":
     p.add_argument("--end",       default="2024-01-01")
     p.add_argument("--synthetic", action="store_true",
                    help="Generate synthetic prices (no internet required)")
+    p.add_argument("--wrds", action="store_true",
+                   help="Load bounded CRSP total returns through WRDS")
+    p.add_argument("--wrds-dataset", choices=["legacy", "annual", "quarterly"],
+                   default="legacy", help="Allowlisted CRSP library layout")
     p.add_argument("--scorecard", action="store_true",
                    help="Print performance table and exit (no figures)")
     main(p.parse_args())
