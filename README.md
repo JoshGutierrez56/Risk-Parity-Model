@@ -31,6 +31,24 @@ python run_risk_parity.py --synthetic --start 2020-01-01 --end 2024-01-01
 
 Omit `--synthetic` to request prices through yfinance.
 
+Prepare WRDS without connecting:
+
+```bash
+pip install -r requirements-live.txt
+python scripts/check_wrds_access.py
+```
+
+When you are at the PC and ready for an interactive/local-config login, run
+`python scripts/check_wrds_access.py --live`. Only after that metadata check
+passes should the bounded CRSP path be used:
+
+```bash
+python run_risk_parity.py --wrds --start 2010-01-01 --end 2024-01-01
+```
+
+The connector combines CRSP `RET` and `DLRET` into a total-return wealth index;
+it does not print credentials or commit WRDS rows.
+
 ## Architecture
 
 ```text
@@ -48,14 +66,14 @@ The repaired SQL layer now:
 
 ## Real-data upgrade assessment
 
-**Status: high feasibility and the most direct real-data conversion in this repair batch.**
+**Status: WRDS-ready; historical results have not yet been generated.**
 
-- The current live path downloads adjusted market prices through yfinance. For research-grade work, add a WRDS loader that writes the same `date`, `ticker`, and `close` contract into DuckDB using CRSP daily total returns or a carefully validated ETF price series.
+- The repository now contains a bounded WRDS loader that writes the existing `date`, `ticker`, and `close` DuckDB contract from CRSP `RET` plus `DLRET` total returns. It supports legacy, annual, and quarterly CRSP library profiles and rejects unbounded or untrusted ticker requests.
 - Use liquid, investable sleeves with point-in-time inception dates; include distributions, missing observations, cash returns, management fees, slippage, and taxes where relevant.
 - Preserve the monthly walk-forward design and compare ERC with inverse volatility, equal weight, 60/40, and a volatility-targeted benchmark across an untouched holdout and crisis subperiods.
 - News and options data are not needed for the core allocation model. They should enter only through separately tested regime or tail-risk overlays, not through retrospective tuning of risk-parity parameters.
 
-WRDS access makes a credible historical validation possible, but the repository does not yet contain a WRDS adapter or a verified real-market result.
+The dry-run and metadata-only entitlement probe are ready. A verified real-market result remains pending the interactive WRDS login and a frozen historical run.
 
 ## Limitations
 

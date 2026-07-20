@@ -116,6 +116,43 @@ def download_and_load(
     logger.info("Loaded %d asset records", len(assets))
 
 
+def load_price_frame(db: DB, prices_wide: pd.DataFrame, tickers: List[str]) -> None:
+    """Load a validated wide price/wealth-index frame and asset metadata."""
+    frame = prices_wide.copy()
+    frame.index = pd.DatetimeIndex(frame.index)
+    frame.index.name = "Date"
+    prices_long = (
+        frame.reset_index()
+        .melt(id_vars=["Date"], var_name="ticker", value_name="close")
+        .rename(columns={"Date": "date"})
+        .dropna(subset=["close"])
+        .assign(date=lambda df: pd.to_datetime(df["date"]).dt.date)
+    )
+    prices_long = prices_long[prices_long["ticker"].isin(tickers)]
+    db.load_df(prices_long[["date", "ticker", "close"]], "prices")
+    assets = pd.DataFrame([
+        {"ticker": ticker, "name": UNIVERSE[ticker][0],
+         "asset_class": UNIVERSE[ticker][1], "region": UNIVERSE[ticker][2]}
+        for ticker in tickers if ticker in UNIVERSE
+    ])
+    db.load_df(assets, "assets")
+
+
+def download_wrds_and_load(
+    db: DB,
+    tickers: List[str],
+    start: str,
+    end: str,
+    dataset: str = "legacy",
+) -> None:
+    """Load a bounded CRSP total-return index through the WRDS connector."""
+    from riskparity.wrds_loader import CRSPRequest, fetch_total_return_index
+
+    request = CRSPRequest.create(tickers, start, end, dataset)
+    prices_wide = fetch_total_return_index(request)
+    load_price_frame(db, prices_wide, tickers)
+
+
 def _synthetic_prices(
     tickers: List[str],
     start:   str,
