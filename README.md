@@ -46,6 +46,17 @@ The repaired SQL layer now:
 - computes diagonal risk shares with a correctly normalized numerator; and
 - raises pipeline errors instead of silently returning empty tables.
 
+## Real-data upgrade assessment
+
+**Status: high feasibility and the most direct real-data conversion in this repair batch.**
+
+- The current live path downloads adjusted market prices through yfinance. For research-grade work, add a WRDS loader that writes the same `date`, `ticker`, and `close` contract into DuckDB using CRSP daily total returns or a carefully validated ETF price series.
+- Use liquid, investable sleeves with point-in-time inception dates; include distributions, missing observations, cash returns, management fees, slippage, and taxes where relevant.
+- Preserve the monthly walk-forward design and compare ERC with inverse volatility, equal weight, 60/40, and a volatility-targeted benchmark across an untouched holdout and crisis subperiods.
+- News and options data are not needed for the core allocation model. They should enter only through separately tested regime or tail-risk overlays, not through retrospective tuning of risk-parity parameters.
+
+WRDS access makes a credible historical validation possible, but the repository does not yet contain a WRDS adapter or a verified real-market result.
+
 ## Limitations
 
 - Synthetic correlations and return distributions are illustrative.
