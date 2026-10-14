@@ -39,7 +39,7 @@ SQL_DIR  = Path("sql")
 def main(args: argparse.Namespace) -> None:
     sys.path.insert(0, "src")
     from riskparity.db        import DB
-    from riskparity.loader    import download_and_load, UNIVERSE
+    from riskparity.loader    import download_and_load, load_prices, UNIVERSE
     from riskparity.optimizer import RiskParityOptimizer
     from riskparity.report    import generate_report
 
@@ -47,7 +47,7 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info("=" * 62)
     logger.info("  Risk Parity Analytics — DuckDB + Python")
-    logger.info("  Replicating Edward Qian's (PanAgora) ERC framework")
+    logger.info("  Equal-risk-contribution research prototype")
     logger.info("=" * 62)
 
     # ── 1. Initialise DuckDB ─────────────────────────────────────────
@@ -59,20 +59,9 @@ def main(args: argparse.Namespace) -> None:
 
     if args.synthetic:
         from riskparity.loader import _synthetic_prices
-        import pandas as pd
         logger.warning("Synthetic mode — generating correlated price data")
         prices = _synthetic_prices(tickers, args.start, args.end)
-        prices_long = (prices.reset_index()
-                       .melt(id_vars=["Date"], var_name="ticker", value_name="close")
-                       .rename(columns={"Date": "date"})
-                       .assign(date=lambda df: pd.to_datetime(df["date"]).dt.date))
-        db.load_df(prices_long[["date", "ticker", "close"]], "prices")
-        import pandas as pd2
-        assets = pd2.DataFrame([
-            {"ticker": t, "name": v[0], "asset_class": v[1], "region": v[2]}
-            for t, v in UNIVERSE.items()
-        ])
-        db.load_df(assets, "assets")
+        load_prices(db, prices, tickers)
     else:
         download_and_load(db, tickers=tickers, start=args.start, end=args.end)
 
@@ -121,24 +110,24 @@ def main(args: argparse.Namespace) -> None:
 
     if args.scorecard:
         if not perf.empty:
-            print("\n┌─ Risk Parity Performance Summary ─────────────────────────")
+            print("\nRisk Parity Performance Summary ")
             print(perf.to_string(index=False))
-            print("└───────────────────────────────────────────────────────────\n")
+            print()
         db.close()
         return
 
     if not perf.empty:
-        print("\n┌─ Performance Summary (from DuckDB SQL) ───────────────────")
+        print("\nPerformance Summary (from DuckDB SQL) ")
         print(perf.to_string(index=False))
-        print("└───────────────────────────────────────────────────────────\n")
+        print()
 
     # Latest risk contribution
     latest_date = rebal_dates[-1]
     rc = optimizer.risk_contribution_table(latest_date, "risk_parity")
     if not rc.empty:
-        print(f"┌─ Risk Contributions at {latest_date} ─────────────────────")
+        print(f"Risk Contributions at {latest_date} ")
         print(rc.to_string(index=False))
-        print("└───────────────────────────────────────────────────────────\n")
+        print()
 
     # ── 8. Generate all figures ───────────────────────────────────────
     logger.info("Generating figures from DuckDB views...")

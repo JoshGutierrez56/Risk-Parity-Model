@@ -1,161 +1,85 @@
-# Risk Parity in SQL
-### Equal Risk Contribution | DuckDB Analytics | Python ERC Solver | Multi-Asset
+# Risk Parity Research
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![DuckDB](https://img.shields.io/badge/SQL-DuckDB-yellow)](https://duckdb.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+**Equal-risk-contribution portfolios with Python optimization and DuckDB analytics.**
 
----
+A compact multi-asset research project that connects covariance estimation, constrained portfolio weights and auditable return accounting. It compares **ERC**, **inverse volatility**, **equal weight** and a **60% SPY / 40% TLT proxy** across ten ETFs.
 
-## What This Is
+**Explore the code:** [ERC solver](src/riskparity/optimizer.py) | [rolling covariance](sql/covariance.sql) | [portfolio accounting](sql/backtest.sql) | [validation tests](tests/) | [methodology](docs/METHODOLOGY.md)
 
-A risk parity analytics system built on a **DuckDB + Python hybrid architecture**,
-directly targeting PanAgora's documented tech stack. Edward Qian (PanAgora's CIO
-of Multi-Asset) coined the term "risk parity" in a 2004 paper and this project
-implements his Equal Risk Contribution framework:
+## The research question
 
-> *"The term 'risk parity' was coined by Edward Qian in a paper written in 2004.
-> Qian is currently Chief Investment Officer of Multi Asset Investments at PanAgora."*
-> — Wikipedia / PanAgora
+Equal dollar weights do not imply equal risk. How do portfolio allocations change when each asset is assigned the same share of portfolio variance, with correlations included?
 
----
+For covariance matrix `Sigma` and fully invested weights `w`, the target is:
 
-## The SQL / Python Split
-
-| Layer | Tool | What it does |
-|-------|------|-------------|
-| Data ingestion | Python (yfinance) | Download prices, load into DuckDB |
-| Returns | **SQL** | `LN(close / LAG(close) OVER (...))` |
-| Rolling covariance | **SQL** | `E[XY] − E[X]·E[Y]` via window aggregates |
-| Inverse-vol weights | **SQL** | `1/σ / Σ(1/σ)` — closed form |
-| NAV compounding | **SQL** | `EXP(SUM(log_ret) OVER (...))` |
-| Drawdown | **SQL** | `nav / MAX(nav) OVER (...) − 1` |
-| Rolling Sharpe | **SQL** | `AVG / STDDEV × SQRT(252)` window |
-| Annual returns | **SQL** | `GROUP BY YEAR(date)` |
-| ERC optimisation | Python (scipy) | Iterative — SQL cannot do this |
-| Figures | Python (matplotlib) | Queries DuckDB views directly |
-
----
-
-## Equal Risk Contribution (ERC)
-
-The ERC portfolio satisfies:
-
-```
-RC_i = w_i × (Σw)_i / (wᵀΣw) = 1/N  ∀ i
+```text
+risk_share_i = w_i * (Sigma @ w)_i / (w.T @ Sigma @ w) = 1 / N
 ```
 
-Where RC_i is the fraction of total portfolio variance attributable to asset i.
-Unlike the simpler inverse-volatility heuristic, ERC accounts for correlations —
-which is critical in a multi-asset portfolio where equities and bonds are negatively
-correlated.
+The [Python solver](src/riskparity/optimizer.py) minimizes squared deviations from that target using SciPy SLSQP. Inverse volatility is a useful baseline; it agrees with ERC for diagonal covariance but not generally for correlated assets.
 
-**Verified properties (test suite):**
+## One implementation, two complementary layers
 
-| Test | Result |
-|------|--------|
-| `solve_erc` converges on diagonal Σ | ✅ RC error < 5.6e-17 |
-| `solve_erc` converges on correlated 4-asset Σ | ✅ RC error < 2.4e-6 |
-| ERC = inv-vol on diagonal Σ (zero correlations) | ✅ |
-| ERC ≠ inv-vol on correlated Σ (diff = 9.5%) | ✅ |
-| ERC weights: all positive, sum to 1 | ✅ |
+| Layer | Responsibility |
+|---|---|
+| Python / pandas | Validate and load a complete adjusted-price panel; explicit synthetic mode for offline checks |
+| DuckDB SQL | Log returns, pairwise rolling covariance, risk-share diagnostics, drifting-holdings NAV, drawdown and summary metrics |
+| Python / SciPy | Solve ERC; generate ERC and baseline target weights and write them to DuckDB |
+| Python / matplotlib | Render figures from the SQL results |
 
----
+The CLI uses a trailing **60-observation population covariance** of log returns, with a **30-observation minimum**, and recomputes targets every **21 available trading observations**. This is not calendar-month rebalancing or a Ledoit-Wolf shrinkage estimator.
 
-## Universe — 10-Asset Multi-Class
+## Synthetic demonstration
 
-```
-US Equity     SPY   S&P 500
-Intl Equity   EFA   MSCI EAFE
-EM Equity     EEM   MSCI Emerging Markets
-LT Treasury   TLT   20+ Year US Treasury
-EM Bonds      EMB   EM USD Bonds
-Commodities   DBC   Broad Commodity Index
-Gold          GLD   Gold ETF
-US REIT       VNQ   Vanguard Real Estate
-TIPS          TIP   Inflation-Linked Bonds
-Cash Proxy    SHY   1-3 Year Treasury
-```
+![Capital weights and full-covariance risk shares from the explicitly synthetic offline demonstration](docs/assets/synthetic-risk-contributions.png)
 
-This 10-asset universe spans Growth, Rates, Inflation, and Liquidity risk
-factors — the same decomposition used in Bridgewater's All Weather strategy.
+*Generated with seed 42 using the offline command below. Unequal capital weights target approximately 10% risk share per asset. These are simulated prices, not historical investment results; the displayed date belongs to the simulation.*
 
----
+## Run it locally
 
-## Repository Structure
-
-```
-risk-parity-sql/
-├── run_risk_parity.py              ← CLI entry point
-│
-├── sql/                            ← Pure SQL analytics (DuckDB)
-│   ├── schema.sql                  ← Table and view definitions
-│   ├── returns.sql                 ← Log returns + vol views
-│   ├── covariance.sql              ← Rolling pairwise cov + inv-vol weights
-│   └── backtest.sql                ← NAV, drawdown, Sharpe, summary
-│
-├── src/riskparity/
-│   ├── db.py                       ← DuckDB connection wrapper
-│   ├── loader.py                   ← yfinance → DuckDB ingestion
-│   ├── optimizer.py                ← ERC solver (scipy SLSQP)
-│   └── report.py                   ← 7 figures querying DuckDB views
-│
-└── tests/
-    └── test_erc_math.py            ← ERC math tests (no DuckDB required)
-```
-
----
-
-## Setup & Usage
+Python **3.10+**. Run commands from the repository root:
 
 ```bash
-pip install -r requirements.txt   # includes duckdb
+git clone https://github.com/JoshGutierrez56/Risk-Parity-Model.git
+cd Risk-Parity-Model
+python -m pip install -r requirements.txt
+python -m pytest tests -q
 
-# Fully offline (synthetic correlated prices)
-python run_risk_parity.py --synthetic
+# Offline demonstration: no download, broker account or credentials
+python -X utf8 run_risk_parity.py --synthetic --start 2023-01-01 --end 2024-06-30
 
-# Full pipeline (downloads via yfinance)
-python run_risk_parity.py
-
-# Print performance table only
-python run_risk_parity.py --scorecard
+# Same calculation, skipping figure generation
+python -X utf8 run_risk_parity.py --synthetic --start 2023-01-01 --end 2024-06-30 --scorecard
 ```
 
-**Outputs:**
+For a separate market-data experiment, omit `--synthetic`; the loader requests adjusted closes from yfinance and **fails on download or coverage errors** rather than substituting simulated data. That online path is not part of the offline verification. Rerunning replaces generated database inputs and weights; outputs are local artifacts, not a cumulative research archive.
 
-```
-outputs/figures/
-  fig1_weights_risk_parity.png    ← stacked weight history
-  fig2_risk_contribution.png      ← capital vs risk contribution bar chart
-  fig3_cumulative_nav.png         ← all strategies vs 60/40
-  fig4_drawdown.png               ← drawdown series (from SQL)
-  fig5_rolling_sharpe.png         ← 252-day rolling Sharpe (from SQL)
-  fig6_correlation.png            ← asset correlation matrix
-  fig7_annual_returns.png         ← calendar-year heatmap
-outputs/tables/
-  performance_summary.csv         ← CAGR, Sharpe, MDD, Calmar, hit rate
-```
+Outputs include `data/risk_parity.duckdb`, figure files under `outputs/figures/` and `outputs/tables/performance_summary.csv`. `--scorecard` still runs the calculation; it does not merely read an existing scorecard.
 
----
+## What is checked
 
-## Requirements
+The [ERC tests](tests/test_erc_math.py) cover positive, fully invested weights, equal risk shares and diagonal/correlated covariance cases. The [SQL accounting tests](tests/test_sql_accounting.py) use hand-derived examples to check:
 
-```
-duckdb>=0.10
-pandas>=2.0
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.7
-yfinance>=0.2.36   # optional; --synthetic bypasses
-```
+- Strictly prior decision-date weights: no target earns its own decision-day return.
+- Buy-and-hold drift between rebalances and economically valid simple-return compounding.
+- Pair-grain rolling covariance and full-covariance risk contributions.
+- First-day loss against initial NAV = 1, and annualization that includes every earned return.
+- Rejection of missing held-asset returns, incomplete inputs and silent synthetic substitution.
 
----
+**Verified on October 14, 2026:** 18 tests passed; the 18-month synthetic CLI run completed all ten figures and its summary CSV. This validates the tested mechanics, not investment performance.
 
-## Academic References
+## Interpretation limits
 
-| Reference | Applied In |
-|-----------|-----------|
-| Qian (2004) — *Risk Parity Portfolios* (PanAgora white paper) | Core framework |
-| Maillard, Roncalli & Teïletche (2010) — *ERC Portfolios* | ERC optimisation |
-| Ledoit & Wolf (2004) — *Analytical LW Shrinkage* | Covariance estimation |
-| Roncalli (2013) — *Introduction to Risk Parity* | Implementation reference |
+- **Execution:** close-date targets apply to the next close-to-close return under an idealized frictionless convention. It is not evidence that closing-price signals can be executed at that same close in practice.
+- **Economics:** no transaction costs, taxes, financing, volatility targeting or leverage. The 60/40 comparator uses long-duration Treasuries, not a broad bond index.
+- **Data:** complete positive finite panels are required; missing prices/covariances are not filled. Adjusted-price revisions and point-in-time availability remain outside this prototype.
+- **Metrics:** Sharpe uses arithmetic daily returns, sample volatility and zero risk-free rate; CAGR uses 252 return observations per year. A rolling Sharpe needs a full 252-return window.
+- **Inference:** synthetic outputs demonstrate accounting and optimization only. There is no claim of alpha, robustness across market regimes or deployable trading performance.
+
+See [methodology and repair notes](docs/METHODOLOGY.md) for the precise timing, data and validation contracts.
+
+## Source provenance
+
+The working implementation is now directly browsable in [`src/`](src/), [`sql/`](sql/) and [`tests/`](tests/). [`risk_parity_sql.zip`](risk_parity_sql.zip) is the **unchanged legacy source snapshot**, retained for provenance. It predates the accounting/parser repairs and must not be extracted over the current implementation.
+
+Conceptual reference: Maillard, Roncalli and Teiletche (2010), *The Properties of Equally Weighted Risk Contribution Portfolios*.
