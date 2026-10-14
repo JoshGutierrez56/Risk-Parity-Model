@@ -1,0 +1,35 @@
+name: Reproducible offline validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install exact verified dependencies
+        run: python -m pip install --require-hashes -r requirements-lock.txt
+      - name: Numerical and accounting tests
+        run: python -m pytest tests -q
+      - name: End-to-end offline demonstration
+        run: python -X utf8 run_risk_parity.py --synthetic --start 2023-01-01 --end 2024-06-30 --scorecard

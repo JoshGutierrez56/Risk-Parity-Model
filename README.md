@@ -1,5 +1,7 @@
 # Risk Parity Research
 
+[![Offline validation](https://github.com/JoshGutierrez56/Risk-Parity-Model/actions/workflows/validation.yml/badge.svg)](https://github.com/JoshGutierrez56/Risk-Parity-Model/actions/workflows/validation.yml)
+
 **Equal-risk-contribution portfolios with Python optimization and DuckDB analytics.**
 
 A compact multi-asset research project that connects covariance estimation, constrained portfolio weights and auditable return accounting. It compares **ERC**, **inverse volatility**, **equal weight** and a **60% SPY / 40% TLT proxy** across ten ETFs.
@@ -37,12 +39,12 @@ The CLI uses a trailing **60-observation population covariance** of log returns,
 
 ## Run it locally
 
-Python **3.10+**. Run commands from the repository root:
+Use **Python 3.11** for the pinned reference environment. The source supports Python 3.10+, but the reference workflow is checked on Python 3.11 on Linux and Windows. Create and activate a virtual environment before installing, then run commands from the repository root:
 
 ```bash
 git clone https://github.com/JoshGutierrez56/Risk-Parity-Model.git
 cd Risk-Parity-Model
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements-lock.txt
 python -m pytest tests -q
 
 # Offline demonstration: no download, broker account or credentials
@@ -55,6 +57,8 @@ python -X utf8 run_risk_parity.py --synthetic --start 2023-01-01 --end 2024-06-3
 For a separate market-data experiment, omit `--synthetic`; the loader requests adjusted closes from yfinance and **fails on download or coverage errors** rather than substituting simulated data. That online path is not part of the offline verification. Rerunning replaces generated database inputs and weights; outputs are local artifacts, not a cumulative research archive.
 
 Outputs include `data/risk_parity.duckdb`, figure files under `outputs/figures/` and `outputs/tables/performance_summary.csv`. `--scorecard` still runs the calculation; it does not merely read an existing scorecard.
+
+[`requirements-lock.txt`](requirements-lock.txt) pins the complete reference environment and package hashes. [`requirements.txt`](requirements.txt) records the broader dependency ranges; changing those ranges does not update the checked lock automatically. To deliberately refresh the lock, run `uv pip compile requirements.txt --python-version 3.11 --universal --generate-hashes --output-file requirements-lock.txt`, then run the tests and offline demonstration. The [CI workflow](.github/workflows/validation.yml) runs both on each published `main` commit and pull request, without credentials or market-data downloads.
 
 ## What is checked
 
